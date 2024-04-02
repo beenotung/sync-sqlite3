@@ -1,6 +1,6 @@
 {
   "name": "sync-sqlite3",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Diff-based sync schema and data between two sqlite databases",
   "keywords": [
     "sqlite",

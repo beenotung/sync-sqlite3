@@ -2,7 +2,15 @@
   "name": "sync-sqlite3",
   "version": "0.0.0",
   "description": "Diff-based sync schema and data between two sqlite databases",
-  "keywords": [],
+  "keywords": [
+    "sqlite",
+    "sync",
+    "schema",
+    "replication",
+    "incremental",
+    "backup",
+    "mirror"
+  ],
   "author": "Beeno Tung <aabbcc1241@yahoo.com.hk> (https://beeno-tung.surge.sh)",
   "license": "BSD-2-Clause",
   "repository": {

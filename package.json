@@ -1,23 +1,31 @@
 {
   "name": "sync-sqlite3",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.0.0",
+  "description": "Diff-based sync schema and data between two sqlite databases",
+  "keywords": [],
+  "author": "Beeno Tung <aabbcc1241@yahoo.com.hk> (https://beeno-tung.surge.sh)",
+  "license": "BSD-2-Clause",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/beenotung/sync-sqlite3.git"
+  },
+  "homepage": "https://github.com/beenotung/sync-sqlite3#readme",
+  "bugs": {
+    "url": "https://github.com/beenotung/sync-sqlite3/issues"
+  },
   "main": "index.js",
   "scripts": {
     "test": "tsc --noEmit",
     "build": "tsc -p ."
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^9.4.3"
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.9",
     "@types/node": "^20.11.30",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.3"
-  },
-  "dependencies": {
-    "better-sqlite3": "^9.4.3"
   }
 }

@@ -1,4 +1,6 @@
-import { Database } from 'better-sqlite3'
+import type { Database } from 'better-sqlite3'
+import type fs from 'fs'
+import type path from 'path'
 
 export type SchemaRow = {
   type: 'table' | 'index'
@@ -158,4 +160,39 @@ select ${fields.map(wrapName)} from ${wrapName(name)}
 
 export function wrapName(name: string): string {
   return '`' + name + '`'
+}
+
+// TODO support incremental export
+export function exportTableData(options: {
+  fs: typeof fs
+  path: typeof path
+  db: Database
+  name: string
+  dir: string
+}) {
+  let { fs, path, db, name, dir } = options
+  let file = path.join(dir, name)
+  fs.writeFileSync(file, '')
+  let n = db
+    .prepare(`select count(*) from ${wrapName(name)}`)
+    .pluck()
+    .get() as number
+  let i = 0
+  let rows = db
+    .prepare(`select * from ${wrapName(name)}`)
+    .iterate() as Iterable<object>
+  let lastP = 0
+  let lastLine = ''
+  for (let row of rows) {
+    i++
+    let p = (i * 100) / n
+    if (p - lastP > 1) {
+      lastLine = `\r ${i}/${n} (${p.toFixed(1)}%)`
+      process.stdout.write(lastLine)
+      lastP = p
+    }
+    let line = JSON.stringify(Object.values(row)) + '\n'
+    fs.appendFileSync(file, line)
+  }
+  process.stdout.write(`\r${' '.repeat(lastLine.length)}\r`)
 }

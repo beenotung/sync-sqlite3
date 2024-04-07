@@ -1,4 +1,6 @@
 import { Database } from 'better-sqlite3'
+import { Field, Table } from 'quick-erd/dist/core/ast'
+import { parseTableSchema } from 'quick-erd/dist/db/sqlite-parser'
 
 export type SchemaRow = {
   type: 'table' | 'index'
@@ -6,7 +8,12 @@ export type SchemaRow = {
   sql: string
 }
 
-export function scanSchema(db: Database) {
+export type Schema = {
+  tables: Table[]
+  rows: SchemaRow[]
+}
+
+export function scanSchema(db: Database): Schema {
   let rows = db
     .prepare(
       /* sql */ `
@@ -15,43 +22,88 @@ from sqlite_master
 where sql is not null
 `,
     )
-    .all()
-  return rows as SchemaRow[]
+    .all() as SchemaRow[]
+  let tables = parseTableSchema(rows)
+  return { tables, rows }
 }
 
-export type SchemaDiff = {
-  type: 'created' | 'updated' | 'deleted'
-  schema: SchemaRow
-}
+export type SchemaDiff =
+  | { type: 'create-table'; table: Table }
+  | { type: 'drop-table'; name: string }
+  | { type: 'alter-table'; changes: FieldDiff[] }
+
+export type FieldDiff =
+  | { type: 'add-column'; field: Field }
+  | { type: 'drop-column'; name: string }
+  | { type: 'alter-column'; field: Field }
 
 export function compareSchema(options: {
-  src: SchemaRow[]
-  dest: SchemaRow[]
+  src: Schema
+  dest: Schema
 }): SchemaDiff[] {
   let diffs: SchemaDiff[] = []
-  for (let src of options.src) {
-    let { type, name } = src
-    let dest = options.dest.find(row => row.type == type && row.name == name)
-    if (!dest) {
-      diffs.push({ type: 'created', schema: src })
+  for (let srcTable of options.src.tables) {
+    let destTable = options.dest.tables.find(
+      table => table.name == srcTable.name,
+    )
+    if (!destTable) {
+      diffs.push({ type: 'create-table', table: srcTable })
       continue
     }
-    if (dest.sql != src.sql) {
-      diffs.push({ type: 'updated', schema: src })
+    if (!isSame(srcTable, destTable)) {
+      diffs.push({
+        type: 'alter-table',
+        changes: compareTable({ src: srcTable, dest: destTable }),
+      })
       continue
     }
   }
-  for (let dest of options.dest) {
-    let { type, name } = dest
-    let src = options.src.find(row => row.type == type && row.name == name)
-    if (!src) {
-      diffs.push({ type: 'deleted', schema: dest })
+  for (let destTable of options.dest.tables) {
+    let srcTable = options.src.tables.find(
+      table => table.name == destTable.name,
+    )
+    if (!srcTable) {
+      diffs.push({ type: 'drop-table', name: destTable.name })
     }
   }
   return diffs
 }
 
-export function dropSchema(db: Database, schema: SchemaRow) {
+function compareTable(options: { src: Table; dest: Table }): FieldDiff[] {
+  let diffs: FieldDiff[] = []
+  for (let srcField of options.src.field_list) {
+    let destField = options.dest.field_list.find(
+      field => field.name == srcField.name,
+    )
+    if (!destField) {
+      diffs.push({ type: 'add-column', field: srcField })
+      continue
+    }
+    srcField = {...srcField, is_null:true}
+    destField = {...destField, is_null:true}
+    if (!isSame(srcField, destField)) {
+      diffs.push({ type: 'alter-column', field: srcField })
+      continue
+    }
+    for (let destField of options.dest.field_list) {
+      let srcField = options.src.field_list.find(
+        field => field.name == destField.name,
+      )
+      if (!srcField) {
+        diffs.push({ type: 'drop-column', name: destField.name })
+      }
+    }
+  }
+  return diffs
+}
+
+function isSame<T>(a: T, b: T): boolean {
+  let aStr = JSON.stringify(a)
+  let bStr = JSON.stringify(b)
+  return aStr == bStr
+}
+
+export function dropSchema(db: Database, name:string) {
   switch (schema.type) {
     case 'table':
       db.exec(`drop table ${wrapName(scanSchema.name)}`)
@@ -72,17 +124,16 @@ export function syncSchema(options: {
   let { db } = options
   function run() {
     for (let diff of options.diffs) {
-      let { schema } = diff
       switch (diff.type) {
-        case 'created':
+        case 'create-table':
           db.exec(schema.sql)
           break
-        case 'updated':
+        case 'alter-table':
           dropSchema(db, schema)
           db.exec(schema.sql)
           break
-        case 'deleted':
-          dropSchema(db, schema)
+        case 'drop-table':
+          dropSchema(db, diff.name)
           break
         default:
           throw new Error('unknown schema diff type: ' + diff.type)

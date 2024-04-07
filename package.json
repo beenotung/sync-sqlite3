@@ -27,7 +27,8 @@
     "build": "tsc -p ."
   },
   "dependencies": {
-    "better-sqlite3": "^9.4.3"
+    "better-sqlite3": "^9.4.3",
+    "quick-erd": "^4.18.16"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.9",

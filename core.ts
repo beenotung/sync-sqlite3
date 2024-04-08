@@ -72,7 +72,7 @@ export function syncSchema(options: {
   skipTransaction?: boolean
 }) {
   let { db } = options
-  function run() {
+  run(db, options.skipTransaction, () => {
     for (let diff of options.diffs) {
       let { schema } = diff
       switch (diff.type) {
@@ -90,11 +90,18 @@ export function syncSchema(options: {
           throw new Error('unknown schema diff type: ' + diff.type)
       }
     }
-  }
-  if (options.skipTransaction) {
-    run()
+  })
+}
+
+function run(
+  db: Database,
+  skipTransaction: boolean | undefined,
+  fn: () => void,
+) {
+  if (skipTransaction) {
+    fn()
   } else {
-    db.transaction(run)()
+    db.transaction(fn)()
   }
 }
 
@@ -114,48 +121,116 @@ where type = 'table'
 }
 
 export type RowOverview<ID = number> = {
-  id: ID
+  id?: ID
   created_at?: string | null
   updated_at?: string | null
 }
 
-export function scanTableOverview<Row extends RowOverview>(options: {
+export function scanTableIds<Id = number>(options: {
   db: Database
-  name: string
-
+  table: string
   /** @default 'id' */
-  id?: string
+  field?: string
+}): Id[] {
+  let { db, table } = options
+  let field = getIdField(options.table, options.field)
+  let ids = db
+    .prepare(`select ${wrapName(field)} from ${wrapName(table)}`)
+    .all() as Id[]
+  return ids
+}
 
-  /** @default 'created_at' */
-  created_at?: string | false
+function getIdField(table: string, field?: string): string {
+  if (field) return field
+  switch (table) {
+    case 'sqlite_sequence':
+      return 'name'
+    case 'knex_migrations_lock':
+      return 'index'
+    default:
+      return 'id'
+  }
+}
 
-  /** @default 'updated_at' */
-  updated_at?: string | false
-}): Row[] {
-  let { db, name } = options
-  let id = options.id ?? 'id'
-  let created_at = options.created_at ?? 'created_at'
-  let updated_at = options.updated_at ?? 'updated_at'
-  let fields = [id]
-  if (created_at) fields.push(created_at)
-  if (updated_at) fields.push(updated_at)
-  let rows = db
-    .prepare(
-      /* sql */ `
-select ${fields.map(wrapName)} from ${wrapName(name)}
-`,
-    )
-    .all() as any[]
-  return rows.map(row => {
-    let res: Row = { id: row[id] } as Row
-    if (created_at) {
-      res.created_at = row[created_at]
+export type TableIdDiff<Id = number> = {
+  created: Id[]
+  deleted: Id[]
+}
+
+export function compareTableIds<Id = number>(options: {
+  src: Id[]
+  dest: Id[]
+}): TableIdDiff<Id> {
+  let created: Id[] = []
+  let deleted: Id[] = []
+  let src = new Set(options.src)
+  let dest = new Set(options.dest)
+  for (let id of src) {
+    if (!dest.has(id)) {
+      created.push(id)
     }
-    if (updated_at) {
-      res.updated_at = row[updated_at]
+  }
+  for (let id of dest) {
+    if (!src.has(id)) {
+      deleted.push(id)
     }
-    return res
+  }
+  return { created, deleted }
+}
+
+export function syncTableIds<Id = number>(options: {
+  db: Database
+  table: string
+  diff: TableIdDiff<Id>
+  skipTransaction?: boolean
+  /** @default 200 */
+  /** @description 0 or false to do buck-delete all in once */
+  batchSize?: number | false
+}) {
+  let { db, table } = options
+  let batchSize = options.batchSize ?? 200
+  let deleteStatement = db.prepare(
+    `delete from ${wrapName(table)} where id in ?`,
+  )
+  function deleteAll() {
+    if (!batchSize) {
+      deleteStatement.run(options.diff.deleted)
+      return
+    }
+    let buffer: Id[] = []
+    for (let id of options.diff.deleted) {
+      buffer.push(id)
+      if (buffer.length > batchSize) {
+        deleteStatement.run(buffer)
+        buffer = []
+      }
+    }
+    if (buffer.length > 0) {
+      deleteStatement.run(buffer)
+    }
+  }
+  function copyAll() {
+    // TODO
+  }
+  run(db, options.skipTransaction, () => {
+    deleteAll()
+    copyAll()
   })
+}
+
+export function scanLastUpdate<T = string>(options: {
+  db: Database
+  table: string
+  /** @default 'updated_at' */
+  field?: string
+}): T | null {
+  let { db, table } = options
+  let field = options.field ?? 'updated_at'
+  let last_update = db
+    .prepare(`select max(${wrapName(field)}) from ${wrapName(table)}`)
+    .pluck()
+    .get() as T | null
+  return last_update
 }
 
 export function wrapName(name: string): string {

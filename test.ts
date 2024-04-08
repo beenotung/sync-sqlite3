@@ -5,26 +5,30 @@ import {
   scanSchema,
   compareSchema,
   syncSchema,
-  scanTableOverview,
   scanTableNames,
   exportTableData,
+  scanTableIds,
+  compareTableIds,
 } from './core'
 
-let src = Database('res/exp.sqlite3')
-let dest = Database('res/mirror.sqlite3')
+let srcDB = Database('res/exp.sqlite3')
+let destDB = Database('res/mirror.sqlite3')
 
-let diffs = compareSchema({
-  src: scanSchema(src),
-  dest: scanSchema(dest),
+let schemaDiffs = compareSchema({
+  src: scanSchema(srcDB),
+  dest: scanSchema(destDB),
 })
 
-syncSchema({ db: dest, diffs })
+syncSchema({ db: destDB, diffs: schemaDiffs })
 
 let dir = 'res/data'
 fs.mkdirSync(dir, { recursive: true })
-let tableNames = scanTableNames(src)
-for (let name of tableNames) {
-  // let overview = scanTableOverview({ db: src, name })
-  // console.log('overview:', { name, len: overview.length })
-  exportTableData({ fs, path, db: src, name, dir })
+let tableNames = scanTableNames(srcDB)
+for (let table of tableNames) {
+ let idDiffs= compareTableIds({
+    src:scanTableIds({db:srcDB,table}),
+    dest:scanTableIds({db:srcDB,table}),
+  })
 }
+
+console.log('done.')
